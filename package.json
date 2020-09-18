@@ -1,0 +1,38 @@
+{
+  "name": "@prismamedia/amqp-client",
+  "license": "MIT",
+  "contributors": [
+    "Yvann Boucher <yvann.boucher@gmail.com>"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/prismamedia/ts-amqp-client"
+  },
+  "main": "dist/cjs/index.js",
+  "typings": "dist/types/index.d.ts",
+  "engines": {
+    "node": ">=12"
+  },
+  "scripts": {
+    "build": "tsc --build tsconfig.json",
+    "build:clean": "tsc --build tsconfig.json --clean",
+    "build:watch": "tsc --build tsconfig.json --watch",
+    "test": "NODE_ENV=test jest --detectOpenHandles --verbose --passWithNoTests",
+    "test:watch": "yarn run test --watchAll",
+    "clean": "git clean -dfqx -- .",
+    "prettier": "prettier --write \"src/**/*.ts\""
+  },
+  "devDependencies": {
+    "@types/jest": "^26.0.14",
+    "@types/node": "^14.11.2",
+    "@yarnpkg/pnpify": "^2.2.1",
+    "jest": "^26.4.2",
+    "prettier": "^2.1.2",
+    "ts-jest": "^26.4.0",
+    "typescript": "^4.0.3"
+  },
+  "dependencies": {
+    "@types/amqplib": "^0.5.13",
+    "amqplib": "^0.6.0"
+  }
+}
