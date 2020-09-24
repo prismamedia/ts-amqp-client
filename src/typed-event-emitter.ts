@@ -1,5 +1,4 @@
 import { EventEmitter } from 'events';
-import { clearTimeout, setTimeout } from 'timers';
 
 export type TEventMap = Record<string, any>;
 
@@ -48,21 +47,22 @@ export class TypedEventEmitter<TMap extends TEventMap> extends EventEmitter {
   }
 
   public async wait<TName extends TEventName<TMap>>(
-    name: TName,
-    timeoutInMs: number = 60000,
+    ...names: TName[]
   ): Promise<TEventData<TMap, TName>> {
-    return new Promise((resolve, reject) => {
-      const timeoutId = setTimeout(
-        () =>
-          reject(new Error(`The timeout of ${timeoutInMs}ms has been reached`)),
-        timeoutInMs,
-      );
+    return new Promise((resolve) => {
+      const listeners = [...new Set(names)].map((name): [
+        name: TName,
+        listener: TEventListener<TMap, TName>,
+      ] => [
+        name,
+        (data) => {
+          resolve(data);
 
-      this.once(name, (data) => {
-        clearTimeout(timeoutId);
+          listeners.forEach((args) => this.removeListener(...args));
+        },
+      ]);
 
-        resolve(data);
-      });
+      listeners.forEach((args) => this.on(...args));
     });
   }
 }

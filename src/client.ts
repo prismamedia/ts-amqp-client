@@ -76,9 +76,8 @@ export class Client extends TypedEventEmitter<TClientEventMap> {
       this,
       options?.rpcResultsQueueName ||
         `rpc_results.${crypto.randomBytes(4).toString('base64')}`,
-      async ({ payload, message }) =>
+      ({ payload, message }) =>
         this.#rpcMap.get(message.properties.correlationId)?.(payload),
-      { exclusive: true },
     );
   }
 
@@ -169,19 +168,17 @@ export class Client extends TypedEventEmitter<TClientEventMap> {
   }
 
   public async consumeAndWait<
-    TEvent extends TEventName<TConsumerEventMap>,
     TPayload extends TMessagePayload = any,
     TReply extends TMessagePayload = any
   >(
     queueName: TQueueName,
     callback: TConsumerCallback<TPayload, TReply>,
     options: TConsumerOptions,
-    eventName: TEvent,
-    timeoutInMs: number,
+    ...eventNames: TEventName<TConsumerEventMap>[]
   ) {
     const consumer = await this.consume(queueName, callback, options);
 
-    return consumer.wait(eventName, timeoutInMs);
+    return consumer.wait(...eventNames);
   }
 
   public async rpc<

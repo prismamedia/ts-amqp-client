@@ -207,11 +207,7 @@ export class Consumer<
       this.emit(ConsumerEventKind.MessageAcknowledged, data);
     } catch (error) {
       if (error instanceof Error && error.name === 'IllegalOperationError') {
-        if (this.isConsuming()) {
-          this.emit(ConsumerEventKind.Stopped);
-        } else {
-          // Do nothing
-        }
+        this.isConsuming() && this.emit(ConsumerEventKind.Stopped);
       } else {
         throw error;
       }
@@ -227,11 +223,7 @@ export class Consumer<
       this.emit(ConsumerEventKind.MessageRequeued, data);
     } catch (error) {
       if (error instanceof Error && error.name === 'IllegalOperationError') {
-        if (this.isConsuming()) {
-          this.emit(ConsumerEventKind.Stopped);
-        } else {
-          // Do nothing
-        }
+        this.isConsuming() && this.emit(ConsumerEventKind.Stopped);
       } else {
         throw error;
       }
@@ -247,11 +239,7 @@ export class Consumer<
       this.emit(ConsumerEventKind.MessageRejected, data);
     } catch (error) {
       if (error instanceof Error && error.name === 'IllegalOperationError') {
-        if (this.isConsuming()) {
-          this.emit(ConsumerEventKind.Stopped);
-        } else {
-          // Do nothing
-        }
+        this.isConsuming() && this.emit(ConsumerEventKind.Stopped);
       } else {
         throw error;
       }
@@ -359,7 +347,7 @@ export class Consumer<
               await this.client.publish(
                 '',
                 message.properties.replyTo,
-                result as TMessagePayload,
+                result,
                 { correlationId: message.properties.correlationId },
               );
             }
@@ -429,10 +417,10 @@ export class Consumer<
   }
 
   public async startAndWait<TName extends TEventName<TConsumerEventMap>>(
-    name: TName,
+    ...names: TName[]
   ) {
     await this.start();
 
-    return this.wait(name);
+    return this.wait(...names);
   }
 }

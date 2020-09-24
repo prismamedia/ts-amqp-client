@@ -1,6 +1,7 @@
+import { Options } from 'amqplib';
 import { URL } from 'url';
 import { Client } from '../client';
-import { Consumer, ConsumerEventKind, ConsumerStatus } from '../consumer';
+import { ConsumerEventKind, ConsumerStatus } from '../consumer';
 
 type TConsumerRequest = {
   request?: 'waitFor100ms' | 'requeue' | 'reject';
@@ -30,87 +31,75 @@ describe('Client', () => {
   it('forceExchange works', async () => {
     const exchangeName = 'test_force-exchange_works';
 
-    try {
-      await expect(
-        client.assertExchange(exchangeName, 'fanout'),
-      ).resolves.toMatchObject({
-        exchange: exchangeName,
-      });
+    await expect(
+      client.assertExchange(exchangeName, 'fanout'),
+    ).resolves.toMatchObject({
+      exchange: exchangeName,
+    });
 
-      await expect(
-        client.assertExchange(exchangeName, 'topic'),
-      ).rejects.toThrowError();
+    await expect(
+      client.assertExchange(exchangeName, 'topic'),
+    ).rejects.toThrowError();
 
-      await expect(
-        client.forceExchange(exchangeName, 'topic'),
-      ).resolves.toMatchObject({
-        exchange: exchangeName,
-      });
-    } finally {
-      await expect(client.deleteExchange(exchangeName)).resolves.toEqual({});
-    }
+    await expect(
+      client.forceExchange(exchangeName, 'topic'),
+    ).resolves.toMatchObject({
+      exchange: exchangeName,
+    });
+
+    await expect(client.deleteExchange(exchangeName)).resolves.toEqual({});
   });
 
   it('forceQueue works', async () => {
     const queueName = 'test_force-queue_works';
 
-    try {
-      await expect(client.assertQueue(queueName)).resolves.toMatchObject({
-        queue: queueName,
-      });
+    await expect(client.assertQueue(queueName)).resolves.toMatchObject({
+      queue: queueName,
+    });
 
-      await expect(
-        client.assertQueue(queueName, { exclusive: true }),
-      ).rejects.toThrowError();
+    await expect(
+      client.assertQueue(queueName, { exclusive: true }),
+    ).rejects.toThrowError();
 
-      await expect(
-        client.forceQueue(queueName, { exclusive: true }),
-      ).resolves.toMatchObject({
-        queue: queueName,
-      });
-    } finally {
-      await expect(client.deleteQueue(queueName)).resolves.toEqual({
-        messageCount: 0,
-      });
-    }
+    await expect(
+      client.forceQueue(queueName, { exclusive: true }),
+    ).resolves.toMatchObject({
+      queue: queueName,
+    });
+
+    await expect(client.deleteQueue(queueName)).resolves.toEqual({
+      messageCount: 0,
+    });
   });
 
   it('publishing works', async () => {
     const queueName = 'test_publishing_works';
-    const queueOptions = { durable: false };
+    const queueOptions: Options.AssertQueue = { exclusive: true };
 
-    await expect(
-      client.checkQueue(queueName),
-    ).rejects.toThrowErrorMatchingInlineSnapshot(
-      `"Operation failed: QueueDeclare; 404 (NOT-FOUND) with message \\"NOT_FOUND - no queue 'test_publishing_works' in vhost '/'\\""`,
+    await client.forceQueue(queueName, queueOptions);
+    await client.purgeQueue(queueName);
+
+    await Promise.all(
+      [...new Array(10)].map(() =>
+        expect(client.publish('', queueName, {})).resolves.toBeUndefined(),
+      ),
     );
 
-    await client.assertQueue(queueName, queueOptions);
+    await expect(client.checkQueue(queueName)).resolves.toMatchObject({
+      messageCount: 10,
+    });
 
-    try {
-      await Promise.all(
-        [...new Array(10)].map(() => client.publish('', queueName, {})),
-      );
-
-      await expect(client.checkQueue(queueName)).resolves.toMatchObject({
-        messageCount: 10,
-      });
-    } finally {
-      await client.deleteQueue(queueName);
-    }
+    await expect(client.deleteQueue(queueName)).resolves.toMatchObject({
+      messageCount: 10,
+    });
   });
 
   it('consuming works', async () => {
     const queueName = 'test_consuming_works';
-    const queueOptions = { durable: false };
+    const queueOptions: Options.AssertQueue = { exclusive: true };
 
-    await expect(
-      client.checkQueue(queueName),
-    ).rejects.toThrowErrorMatchingInlineSnapshot(
-      `"Operation failed: QueueDeclare; 404 (NOT-FOUND) with message \\"NOT_FOUND - no queue 'test_consuming_works' in vhost '/'\\""`,
-    );
-
-    await client.assertQueue(queueName, queueOptions);
+    await client.forceQueue(queueName, queueOptions);
+    await client.purgeQueue(queueName);
 
     try {
       let messageProcessedCount = 0;
@@ -183,15 +172,10 @@ describe('Client', () => {
 
   it('stops on message callback error works', async () => {
     const queueName = 'test_stop_on_message_callback_error_works';
-    const queueOptions = { durable: false };
+    const queueOptions: Options.AssertQueue = { exclusive: true };
 
-    await expect(
-      client.checkQueue(queueName),
-    ).rejects.toThrowErrorMatchingInlineSnapshot(
-      `"Operation failed: QueueDeclare; 404 (NOT-FOUND) with message \\"NOT_FOUND - no queue 'test_stop_on_message_callback_error_works' in vhost '/'\\""`,
-    );
-
-    await client.assertQueue(queueName, queueOptions);
+    await client.forceQueue(queueName, queueOptions);
+    await client.purgeQueue(queueName);
 
     try {
       const consumer = await client.consume(
@@ -203,9 +187,7 @@ describe('Client', () => {
       );
 
       await Promise.all([
-        [...new Array(5)].map(() =>
-          client.publish<TConsumerRequest>('', queueName, {}),
-        ),
+        [...new Array(5)].map(() => client.publish('', queueName, {})),
         consumer.wait(ConsumerEventKind.Stopped),
       ]);
 
@@ -220,84 +202,77 @@ describe('Client', () => {
 
   it('rpc works', async () => {
     const queueName = 'test_rpc_works';
-    const queueOptions = {};
+    const queueOptions: Options.AssertQueue = { exclusive: true };
 
-    await expect(
-      client.checkQueue(queueName),
-    ).rejects.toThrowErrorMatchingInlineSnapshot(
-      `"Operation failed: QueueDeclare; 404 (NOT-FOUND) with message \\"NOT_FOUND - no queue 'test_rpc_works' in vhost '/'\\""`,
+    await client.forceQueue(queueName, queueOptions);
+    await client.purgeQueue(queueName);
+
+    const consumer = await client.consume<TConsumerRequest, TConsumerResponse>(
+      queueName,
+      async ({ payload, requeueOnError }) => {
+        switch (payload.request) {
+          case 'waitFor100ms':
+            await waitFor(100);
+            break;
+
+          case 'reject':
+            throw new Error(`An error`);
+
+          case 'requeue':
+            requeueOnError?.();
+            throw new Error(`A "requeueOnError" reason`);
+        }
+
+        return {
+          response: 'OK',
+        };
+      },
     );
 
-    await client.assertQueue(queueName, queueOptions);
+    await expect(
+      client.rpc<TConsumerRequest, TConsumerResponse>('', queueName, {}),
+    ).resolves.toEqual({
+      response: 'OK',
+    });
 
-    let consumer: Consumer | undefined;
-
-    try {
-      consumer = await client.consume<TConsumerRequest, TConsumerResponse>(
+    await expect(
+      client.rpc<TConsumerRequest, TConsumerResponse>(
+        '',
         queueName,
-        async ({ payload, requeueOnError }) => {
-          switch (payload.request) {
-            case 'waitFor100ms':
-              await waitFor(100);
-              break;
+        { request: 'waitFor100ms' },
+        { timeoutInMs: 250 },
+      ),
+    ).resolves.toEqual({
+      response: 'OK',
+    });
 
-            case 'reject':
-              throw new Error(`An error`);
+    // Will throw an error, as the consumer will eventually reject the message, the client will never receive anything
+    await expect(
+      client.rpc<TConsumerRequest, TConsumerResponse>(
+        '',
+        queueName,
+        { request: 'requeue' },
+        { timeoutInMs: 50 },
+      ),
+    ).rejects.toThrow(/The RPC "[^"]+" has reached the timeout of 50ms/);
 
-            case 'requeue':
-              requeueOnError?.();
-              throw new Error(`A "requeueOnError" reason`);
-          }
+    // Will throw an error, as the consumer will reject the message, the client will never receive anything
+    await expect(
+      client.rpc<TConsumerRequest, TConsumerResponse>(
+        '',
+        queueName,
+        { request: 'reject' },
+        { timeoutInMs: 50 },
+      ),
+    ).rejects.toThrow(/The RPC "[^"]+" has reached the timeout of 50ms/);
 
-          return {
-            response: 'OK',
-          };
-        },
-      );
+    expect(consumer.getStatus()).toEqual(ConsumerStatus.Consuming);
 
-      await expect(
-        client.rpc<TConsumerRequest, TConsumerResponse>('', queueName, {}),
-      ).resolves.toEqual({
-        response: 'OK',
-      });
+    await Promise.all([
+      client.deleteQueue(queueName),
+      consumer.wait(ConsumerEventKind.Stopped),
+    ]);
 
-      await expect(
-        client.rpc<TConsumerRequest, TConsumerResponse>(
-          '',
-          queueName,
-          { request: 'waitFor100ms' },
-          { timeoutInMs: 250 },
-        ),
-      ).resolves.toEqual({
-        response: 'OK',
-      });
-
-      // Will throw an error, as the consumer will eventually reject the message, the client will never receive anything
-      await expect(
-        client.rpc<TConsumerRequest, TConsumerResponse>(
-          '',
-          queueName,
-          { request: 'requeue' },
-          { timeoutInMs: 50 },
-        ),
-      ).rejects.toThrow(/The RPC "[^"]+" has reached the timeout of 50ms/);
-
-      // Will throw an error, as the consumer will reject the message, the client will never receive anything
-      await expect(
-        client.rpc<TConsumerRequest, TConsumerResponse>(
-          '',
-          queueName,
-          { request: 'reject' },
-          { timeoutInMs: 50 },
-        ),
-      ).rejects.toThrow(/The RPC "[^"]+" has reached the timeout of 50ms/);
-
-      expect(consumer.getStatus()).toEqual(ConsumerStatus.Consuming);
-    } finally {
-      await client.deleteQueue(queueName);
-      await waitFor(5);
-
-      expect(consumer?.getStatus()).toEqual(ConsumerStatus.Idle);
-    }
+    expect(consumer.getStatus()).toEqual(ConsumerStatus.Idle);
   });
 });
