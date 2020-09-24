@@ -27,6 +27,54 @@ describe('Client', () => {
     expect(new URL(client.url).search).toEqual('?heartbeat=15');
   });
 
+  it('forceExchange works', async () => {
+    const exchangeName = 'test_force-exchange_works';
+
+    try {
+      await expect(
+        client.assertExchange(exchangeName, 'fanout'),
+      ).resolves.toMatchObject({
+        exchange: exchangeName,
+      });
+
+      await expect(
+        client.assertExchange(exchangeName, 'topic'),
+      ).rejects.toThrowError(/PRECONDITION\-FAILED/);
+
+      await expect(
+        client.forceExchange(exchangeName, 'topic'),
+      ).resolves.toMatchObject({
+        exchange: exchangeName,
+      });
+    } finally {
+      await expect(client.deleteExchange(exchangeName)).resolves.toEqual({});
+    }
+  });
+
+  it('forceQueue works', async () => {
+    const queueName = 'test_force-queue_works';
+
+    try {
+      await expect(client.assertQueue(queueName)).resolves.toMatchObject({
+        queue: queueName,
+      });
+
+      await expect(
+        client.assertQueue(queueName, { exclusive: true }),
+      ).rejects.toThrowError(/PRECONDITION\-FAILED/);
+
+      await expect(
+        client.forceQueue(queueName, { exclusive: true }),
+      ).resolves.toMatchObject({
+        queue: queueName,
+      });
+    } finally {
+      await expect(client.deleteQueue(queueName)).resolves.toEqual({
+        messageCount: 0,
+      });
+    }
+  });
+
   it('publishing works', async () => {
     const queueName = 'test_publishing_works';
     const queueOptions = { durable: false };

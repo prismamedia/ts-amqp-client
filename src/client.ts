@@ -262,6 +262,12 @@ export class Client extends TypedEventEmitter<TClientEventMap> {
     return (channel as any)[methodName](...args);
   }
 
+  public async assertExchange(
+    ...args: Parameters<ConfirmChannel['assertExchange']>
+  ) {
+    return this.seamlessCallOnChannel('assertExchange', ...args);
+  }
+
   public async checkExchange(
     ...args: Parameters<ConfirmChannel['checkExchange']>
   ) {
@@ -286,6 +292,23 @@ export class Client extends TypedEventEmitter<TClientEventMap> {
     return this.seamlessCallOnChannel('deleteExchange', ...args);
   }
 
+  public async forceExchange(
+    ...args: Parameters<ConfirmChannel['assertExchange']>
+  ) {
+    try {
+      return await this.assertExchange(...args);
+    } catch (error) {
+      // https://www.rabbitmq.com/amqp-0-9-1-reference.html#constants
+      if (typeof error === 'object' && error.code === 406) {
+        await this.deleteExchange(args[0]);
+
+        return await this.assertExchange(...args);
+      }
+
+      throw error;
+    }
+  }
+
   public async assertQueue(...args: Parameters<ConfirmChannel['assertQueue']>) {
     return this.seamlessCallOnChannel('assertQueue', ...args);
   }
@@ -308,5 +331,20 @@ export class Client extends TypedEventEmitter<TClientEventMap> {
 
   public async deleteQueue(...args: Parameters<ConfirmChannel['deleteQueue']>) {
     return this.seamlessCallOnChannel('deleteQueue', ...args);
+  }
+
+  public async forceQueue(...args: Parameters<ConfirmChannel['assertQueue']>) {
+    try {
+      return await this.assertQueue(...args);
+    } catch (error) {
+      // https://www.rabbitmq.com/amqp-0-9-1-reference.html#constants
+      if (typeof error === 'object' && error.code === 406) {
+        await this.deleteQueue(args[0]);
+
+        return await this.assertQueue(...args);
+      }
+
+      throw error;
+    }
   }
 }
