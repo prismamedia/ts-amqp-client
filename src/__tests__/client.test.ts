@@ -1,9 +1,9 @@
 import { URL } from 'url';
 import { Client } from '../client';
-import { Consumer, ConsumerStatus } from '../consumer';
+import { Consumer, ConsumerEventKind, ConsumerStatus } from '../consumer';
 
 type TConsumerRequest = {
-  request?: 'waitFor100ms' | 'throwAnError' | 'reject';
+  request?: 'waitFor100ms' | 'requeue' | 'reject';
 };
 
 type TConsumerResponse = {
@@ -72,7 +72,7 @@ describe('Client', () => {
         TConsumerResponse
       >(
         queueName,
-        async ({ payload, reject }) => {
+        async ({ payload, requeueOnError }) => {
           messageProcessedCount++;
 
           switch (payload.request) {
@@ -80,11 +80,12 @@ describe('Client', () => {
               await waitFor(100);
               break;
 
-            case 'throwAnError':
+            case 'reject':
               throw new Error(`An error`);
 
-            case 'reject':
-              return reject(new Error(`A reject reason`));
+            case 'requeue':
+              requeueOnError?.();
+              throw new Error(`A "requeueOnError" reason`);
           }
 
           return {
@@ -105,11 +106,11 @@ describe('Client', () => {
         Promise.all(
           [...new Array(5)].map(() =>
             client.publish<TConsumerRequest>('', queueName, {
-              request: 'throwAnError',
+              request: 'requeue',
             }),
           ),
         ),
-        consumer.wait(),
+        consumer.wait(ConsumerEventKind.Stopped),
       ]);
 
       expect(messageProcessedCount).toBe(15);
@@ -124,9 +125,46 @@ describe('Client', () => {
         messageCount: 5,
       });
 
-      await consumer.startAndWait();
+      await consumer.startAndWait(ConsumerEventKind.Stopped);
 
       expect(messageProcessedCount).toBe(20);
+    } finally {
+      await client.deleteQueue(queueName);
+    }
+  });
+
+  it('stops on message callback error works', async () => {
+    const queueName = 'test_stop_on_message_callback_error_works';
+    const queueOptions = { durable: false };
+
+    await expect(
+      client.checkQueue(queueName),
+    ).rejects.toThrowErrorMatchingInlineSnapshot(
+      `"Operation failed: QueueDeclare; 404 (NOT-FOUND) with message \\"NOT_FOUND - no queue 'test_stop_on_message_callback_error_works' in vhost '/'\\""`,
+    );
+
+    await client.assertQueue(queueName, queueOptions);
+
+    try {
+      const consumer = await client.consume(
+        queueName,
+        () => {
+          throw new Error('An error');
+        },
+        { stopOnMessageCallbackError: true },
+      );
+
+      await Promise.all([
+        [...new Array(5)].map(() =>
+          client.publish<TConsumerRequest>('', queueName, {}),
+        ),
+        consumer.wait(ConsumerEventKind.Stopped),
+      ]);
+
+      // The first message throws an Error, so the consumer is stopped and 4 messages remains
+      await expect(client.checkQueue(queueName)).resolves.toMatchObject({
+        messageCount: 4,
+      });
     } finally {
       await client.deleteQueue(queueName);
     }
@@ -149,17 +187,18 @@ describe('Client', () => {
     try {
       consumer = await client.consume<TConsumerRequest, TConsumerResponse>(
         queueName,
-        async ({ payload, reject }) => {
+        async ({ payload, requeueOnError }) => {
           switch (payload.request) {
             case 'waitFor100ms':
               await waitFor(100);
               break;
 
-            case 'throwAnError':
+            case 'reject':
               throw new Error(`An error`);
 
-            case 'reject':
-              return reject(new Error(`A reject reason`));
+            case 'requeue':
+              requeueOnError?.();
+              throw new Error(`A "requeueOnError" reason`);
           }
 
           return {
@@ -185,12 +224,12 @@ describe('Client', () => {
         response: 'OK',
       });
 
-      // Will throw an error, as the consumer will throw an error, the client will never receive anything
+      // Will throw an error, as the consumer will eventually reject the message, the client will never receive anything
       await expect(
         client.rpc<TConsumerRequest, TConsumerResponse>(
           '',
           queueName,
-          { request: 'throwAnError' },
+          { request: 'requeue' },
           { timeoutInMs: 50 },
         ),
       ).rejects.toThrow(/The RPC "[^"]+" has reached the timeout of 50ms/);

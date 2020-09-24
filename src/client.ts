@@ -3,7 +3,6 @@ import crypto from 'crypto';
 import { clearTimeout, setTimeout } from 'timers';
 import { URL } from 'url';
 import { Consumer, TConsumerCallback, TConsumerOptions } from './consumer';
-import { AMQPError } from './error';
 import { TypedEventEmitter } from './typed-event-emitter';
 
 export type TMessagePayload = { [key: string]: any };
@@ -86,9 +85,9 @@ export class Client extends TypedEventEmitter<TClientEventMap> {
           this.emit(ClientEventKind.ConnectionError, error),
         )
         .on('close', () => {
-          this.emit(ClientEventKind.ConnectionClosed);
-
           this.#connection = null;
+
+          this.emit(ClientEventKind.ConnectionClosed);
         });
 
       this.emit(ClientEventKind.ConnectionOpened, connection);
@@ -116,9 +115,9 @@ export class Client extends TypedEventEmitter<TClientEventMap> {
           this.emit(ClientEventKind.ChannelError, error),
         )
         .on('close', () => {
-          this.emit(ClientEventKind.ChannelClosed);
-
           this.#channel = null;
+
+          this.emit(ClientEventKind.ChannelClosed);
         });
 
       this.emit(ClientEventKind.ChannelOpened, channel);
@@ -135,7 +134,7 @@ export class Client extends TypedEventEmitter<TClientEventMap> {
     exchange: string = '',
     routingKey: string = '',
     payload: TPayload,
-    options: TPublishOptions = {},
+    options?: TPublishOptions,
   ): Promise<void> {
     const channel = await this.getChannel();
 
@@ -156,7 +155,7 @@ export class Client extends TypedEventEmitter<TClientEventMap> {
   >(
     queueName: TQueueName,
     callback: TConsumerCallback<TPayload, TReply>,
-    options: TConsumerOptions = {},
+    options?: TConsumerOptions,
   ): Promise<Consumer<TPayload, TReply>> {
     const consumer = new Consumer(this, queueName, callback, options);
     await consumer.start();
@@ -186,7 +185,7 @@ export class Client extends TypedEventEmitter<TClientEventMap> {
         this.#rpcMap.delete(correlationId);
 
         reject(
-          new AMQPError(
+          new Error(
             `The RPC "${correlationId}" has reached the timeout of ${timeoutInMs}ms`,
           ),
         );

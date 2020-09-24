@@ -1,8 +1,7 @@
 import type { ConfirmChannel, Message, Options } from 'amqplib';
 import { clearTimeout, setTimeout } from 'timers';
 import type { Client, TMessagePayload, TQueueName } from './client';
-import { AMQPError } from './error';
-import { TypedEventEmitter } from './typed-event-emitter';
+import { TEventName, TypedEventEmitter } from './typed-event-emitter';
 
 export type TConsumerTag = string;
 
@@ -18,9 +17,12 @@ export type TConsumerCallbackArgs<TPayload extends TMessagePayload> = {
   message: Message;
 
   /**
-   * Reject the current message
+   * Requeue the current message in case an Error is thrown in the callback,
+   * the default behavior is to reject it.
+   *
+   * The method is available only if the message has not been already redelivered
    */
-  reject: (error: Error) => void;
+  requeueOnError?: () => void;
 };
 
 export type TConsumerCallback<
@@ -45,6 +47,7 @@ export enum ConsumerEventKind {
   MessageRejected = 'MESSAGE_REJECTED',
   MessageRequeued = 'MESSAGE_REQUEUED',
   MessageAcknowledged = 'MESSAGE_ACKNOWLEDGED',
+  MessageCallbackError = 'MESSAGE_CALLBACK_ERROR',
 }
 
 export type TConsumerEventMap = {
@@ -71,9 +74,17 @@ export type TConsumerEventMap = {
     message: Message;
     payload: TMessagePayload;
   };
+  [ConsumerEventKind.MessageCallbackError]: {
+    message: Message;
+    payload: TMessagePayload;
+    error: Error;
+  };
 };
 
 export type TConsumerOptions = Omit<Options.Consume, 'noLocal'> & {
+  /**
+   * @see https://www.rabbitmq.com/consumer-prefetch.html
+   */
   prefetch?: number;
 
   /**
@@ -85,6 +96,12 @@ export type TConsumerOptions = Omit<Options.Consume, 'noLocal'> & {
    * After "idleInMs" ms with no message, the consumer will stop
    */
   idleInMs?: number;
+
+  /**
+   * Stop on message's callback error"
+   * Default is false, the message is rejected and the consumer continues
+   */
+  stopOnMessageCallbackError?: boolean;
 };
 
 export class Consumer<
@@ -100,19 +117,27 @@ export class Consumer<
   public readonly prefetch: number;
   public readonly consumeInMs: number | null;
   public readonly idleInMs: number | null;
+  public readonly stopOnMessageCallbackError: boolean;
   public readonly options: Options.Consume;
 
   public constructor(
     public readonly client: Client,
     public readonly queueName: TQueueName,
     public readonly callback: TConsumerCallback<TPayload, TReply>,
-    { prefetch = 1, consumeInMs, idleInMs, ...options }: TConsumerOptions = {},
+    {
+      prefetch = 1,
+      consumeInMs,
+      idleInMs,
+      stopOnMessageCallbackError = false,
+      ...options
+    }: TConsumerOptions = {},
   ) {
     super();
 
     this.prefetch = prefetch;
     this.consumeInMs = consumeInMs ?? null;
     this.idleInMs = idleInMs ?? null;
+    this.stopOnMessageCallbackError = stopOnMessageCallbackError;
     this.options = options;
 
     this.on(ConsumerEventKind.Stopped, () => {
@@ -121,9 +146,11 @@ export class Consumer<
       this.clearConsumeTimeout();
       this.clearIdleTimeout();
     })
-      .on(ConsumerEventKind.ChannelClosed, () =>
-        this.emit(ConsumerEventKind.Stopped),
-      )
+      .on(ConsumerEventKind.ChannelClosed, () => {
+        if (this.isConsuming()) {
+          this.emit(ConsumerEventKind.Stopped);
+        }
+      })
       .on('error', (error) => client.emit('error', error));
   }
 
@@ -158,9 +185,9 @@ export class Consumer<
           this.emit(ConsumerEventKind.ChannelError, error),
         )
         .on('close', () => {
-          this.emit(ConsumerEventKind.ChannelClosed);
-
           this.#channel = null;
+
+          this.emit(ConsumerEventKind.ChannelClosed);
         });
 
       await channel.prefetch(this.prefetch);
@@ -182,6 +209,8 @@ export class Consumer<
       if (error instanceof Error && error.name === 'IllegalOperationError') {
         if (this.isConsuming()) {
           this.emit(ConsumerEventKind.Stopped);
+        } else {
+          // Do nothing
         }
       } else {
         throw error;
@@ -200,6 +229,8 @@ export class Consumer<
       if (error instanceof Error && error.name === 'IllegalOperationError') {
         if (this.isConsuming()) {
           this.emit(ConsumerEventKind.Stopped);
+        } else {
+          // Do nothing
         }
       } else {
         throw error;
@@ -218,6 +249,8 @@ export class Consumer<
       if (error instanceof Error && error.name === 'IllegalOperationError') {
         if (this.isConsuming()) {
           this.emit(ConsumerEventKind.Stopped);
+        } else {
+          // Do nothing
         }
       } else {
         throw error;
@@ -265,7 +298,7 @@ export class Consumer<
 
   public async start(): Promise<void> {
     if (this.isConsuming()) {
-      throw new AMQPError(
+      throw new Error(
         `AMQP consumer workflow error: cannot start a "${
           this.#status
         }" consumer`,
@@ -287,7 +320,7 @@ export class Consumer<
             // The message's "Content-Type" is not supported, reject it
             return this.reject(channel, {
               message,
-              error: new AMQPError(
+              error: new Error(
                 `The Content-Type "${String(
                   message.properties.contentType,
                 )}" is not supported, the message has been rejected`,
@@ -307,23 +340,16 @@ export class Consumer<
             });
           }
 
-          try {
-            let rejectedReason: Error | undefined;
+          let requeueOnError: boolean = false;
 
+          try {
             const result = await this.callback({
               message,
               payload,
-              reject: (error: Error) => (rejectedReason = error),
+              requeueOnError: message.fields.redelivered
+                ? undefined
+                : () => (requeueOnError = true),
             });
-
-            if (rejectedReason) {
-              // The message has been rejected by the callback
-              return this.reject(channel, {
-                message,
-                payload,
-                error: rejectedReason,
-              });
-            }
 
             if (
               message.properties.replyTo &&
@@ -337,27 +363,35 @@ export class Consumer<
                 { correlationId: message.properties.correlationId },
               );
             }
-
-            this.ack(channel, {
+          } catch (error) {
+            this.emit(ConsumerEventKind.MessageCallbackError, {
               message,
               payload,
+              error,
             });
-          } catch (error) {
-            // The callback has failed, either it has to be rejected or requeued depends of if it already have been "redelivered" or not
-            if (message.fields.redelivered) {
-              this.reject(channel, {
-                message,
-                payload,
-                error,
-              });
-            } else {
-              this.requeue(channel, {
-                message,
-                payload,
-                error,
-              });
+
+            if (this.stopOnMessageCallbackError) {
+              await this.stop();
             }
+
+            // The callback has failed, requeue or reject the message
+            return requeueOnError
+              ? this.requeue(channel, {
+                  message,
+                  payload,
+                  error,
+                })
+              : this.reject(channel, {
+                  message,
+                  payload,
+                  error,
+                });
           }
+
+          return this.ack(channel, {
+            message,
+            payload,
+          });
         }
       },
       this.options,
@@ -373,7 +407,7 @@ export class Consumer<
 
   public async stop(): Promise<void> {
     if (!this.isConsuming()) {
-      throw new AMQPError(
+      throw new Error(
         `AMQP consumer workflow error: cannot stop a "${
           this.#status
         }" consumer`,
@@ -381,7 +415,7 @@ export class Consumer<
     }
 
     if (!this.#tag) {
-      throw new AMQPError(
+      throw new Error(
         `AMQP consumer workflow error: cannot stop a "${
           this.#status
         }" consumer without a "tag"`,
@@ -394,26 +428,11 @@ export class Consumer<
     this.emit(ConsumerEventKind.Stopped);
   }
 
-  /**
-   * Returns a Promise resolved only when the consumer is stopped
-   */
-  public async wait(): Promise<void> {
-    if (!this.isConsuming()) {
-      throw new AMQPError(
-        `AMQP consumer workflow error: cannot wait a "${
-          this.#status
-        }" consumer`,
-      );
-    }
-
-    return new Promise((resolve) =>
-      this.on(ConsumerEventKind.Stopped, resolve),
-    );
-  }
-
-  public async startAndWait(): Promise<void> {
+  public async startAndWait<TName extends TEventName<TConsumerEventMap>>(
+    name: TName,
+  ) {
     await this.start();
 
-    return this.wait();
+    return this.wait(name);
   }
 }
