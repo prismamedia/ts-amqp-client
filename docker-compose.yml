@@ -3,7 +3,7 @@ version: '3.8'
 services:
   rabbitmq:
     image: rabbitmq:3.6-management-alpine
-    ports: ['15672:15672']
+    # ports: ['15672:15672']
     logging:
       options:
         max-size: 50k

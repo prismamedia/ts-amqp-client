@@ -39,7 +39,7 @@ describe('Client', () => {
 
       await expect(
         client.assertExchange(exchangeName, 'topic'),
-      ).rejects.toThrowError(/PRECONDITION\-FAILED/);
+      ).rejects.toThrowError();
 
       await expect(
         client.forceExchange(exchangeName, 'topic'),
@@ -61,7 +61,7 @@ describe('Client', () => {
 
       await expect(
         client.assertQueue(queueName, { exclusive: true }),
-      ).rejects.toThrowError(/PRECONDITION\-FAILED/);
+      ).rejects.toThrowError();
 
       await expect(
         client.forceQueue(queueName, { exclusive: true }),
