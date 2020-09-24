@@ -2,8 +2,13 @@ import { ConfirmChannel, connect, Connection, Options } from 'amqplib';
 import crypto from 'crypto';
 import { clearTimeout, setTimeout } from 'timers';
 import { URL } from 'url';
-import { Consumer, TConsumerCallback, TConsumerOptions } from './consumer';
-import { TypedEventEmitter } from './typed-event-emitter';
+import {
+  Consumer,
+  TConsumerCallback,
+  TConsumerEventMap,
+  TConsumerOptions,
+} from './consumer';
+import { TEventName, TypedEventEmitter } from './typed-event-emitter';
 
 export type TMessagePayload = { [key: string]: any };
 
@@ -161,6 +166,22 @@ export class Client extends TypedEventEmitter<TClientEventMap> {
     await consumer.start();
 
     return consumer;
+  }
+
+  public async consumeAndWait<
+    TEvent extends TEventName<TConsumerEventMap>,
+    TPayload extends TMessagePayload = any,
+    TReply extends TMessagePayload = any
+  >(
+    queueName: TQueueName,
+    callback: TConsumerCallback<TPayload, TReply>,
+    options: TConsumerOptions,
+    eventName: TEvent,
+    timeoutInMs: number,
+  ) {
+    const consumer = await this.consume(queueName, callback, options);
+
+    return consumer.wait(eventName, timeoutInMs);
   }
 
   public async rpc<
