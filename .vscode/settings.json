@@ -10,5 +10,6 @@
   "search.exclude": {
     "**/.yarn": true,
     "**/.pnp.*": true
-  }
+  },
+  "telemetry.enableTelemetry": false
 }
