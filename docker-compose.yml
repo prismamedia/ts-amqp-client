@@ -1,6 +1,7 @@
 version: '3.8'
 
 services:
+
   rabbitmq:
     image: rabbitmq:3.6-management
     # ports: ['15672:15672']
@@ -16,7 +17,7 @@ services:
     depends_on:
       - rabbitmq
     environment:
-      - AMQP_DSN=amqp://rabbitmq/
+      AMQP_DSN: amqp://rabbitmq/
     volumes:
       - .:/workspace:delegated
       - ~/.bash_history:/root/.bash_history

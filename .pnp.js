@@ -37,6 +37,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         [null, {
           "packageLocation": "./",
           "packageDependencies": [
+            ["@tsconfig/node12", "npm:1.0.7"],
             ["@types/amqplib", "npm:0.5.13"],
             ["@types/jest", "npm:26.0.14"],
             ["@types/node", "npm:14.11.2"],
@@ -771,6 +772,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./",
           "packageDependencies": [
             ["@prismamedia/amqp-client", "workspace:."],
+            ["@tsconfig/node12", "npm:1.0.7"],
             ["@types/amqplib", "npm:0.5.13"],
             ["@types/jest", "npm:26.0.14"],
             ["@types/node", "npm:14.11.2"],
@@ -819,6 +821,15 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [
             ["@szmarczak/http-timer", "npm:4.0.5"],
             ["defer-to-connect", "npm:2.0.0"]
+          ],
+          "linkType": "HARD",
+        }]
+      ]],
+      ["@tsconfig/node12", [
+        ["npm:1.0.7", {
+          "packageLocation": "./.yarn/cache/@tsconfig-node12-npm-1.0.7-3bbdd844d7-82b0352f66.zip/node_modules/@tsconfig/node12/",
+          "packageDependencies": [
+            ["@tsconfig/node12", "npm:1.0.7"]
           ],
           "linkType": "HARD",
         }]
