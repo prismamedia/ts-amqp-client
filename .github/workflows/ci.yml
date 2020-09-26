@@ -53,6 +53,6 @@ jobs:
         if: "matrix.publish == true && startsWith(github.ref, 'refs/tags/')"
         run: |
           npm version --no-git-tag-version ${GITHUB_REF/refs\/tags\//}
-          yarn npm publish
+          yarn npm publish --tolerate-republish --access public
         env:
           YARN_NPM_AUTH_TOKEN: ${{ secrets.NPM_REGISTRY_AUTH_TOKEN }}
