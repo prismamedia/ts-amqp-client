@@ -1,7 +1,6 @@
 version: '3.8'
 
 services:
-
   rabbitmq:
     image: rabbitmq:3.6-management
     # ports: ['15672:15672']
@@ -12,7 +11,7 @@ services:
     restart: 'unless-stopped'
 
   lib:
-    build: .
+    image: node:12
     working_dir: /workspace
     depends_on:
       - rabbitmq

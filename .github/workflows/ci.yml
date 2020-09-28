@@ -19,6 +19,9 @@ jobs:
 
     continue-on-error: ${{ matrix.continue-on-error == true }}
 
+    container:
+      image: node:${{ matrix.node }}
+
     services:
       rabbitmq:
         image: rabbitmq:${{ matrix.rabbit }}
@@ -30,14 +33,6 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Setup NodeJS v${{ matrix.node }}
-        uses: actions/setup-node@v1
-        with:
-          node-version: ${{ matrix.node }}
-
-      - name: Setup Yarn berry
-        run: yarn set version berry
-
       - name: Validate dependencies
         run: yarn install --immutable --immutable-cache
 
@@ -47,7 +42,7 @@ jobs:
       - name: Test
         run: yarn run test
         env:
-          AMQP_DSN: amqp://127.0.0.1:${{ job.services.rabbitmq.ports[5672] }}/
+          AMQP_DSN: amqp://rabbitmq:5672/
 
       - name: Publish to npmjs
         if: "matrix.publish == true && startsWith(github.ref, 'refs/tags/')"
