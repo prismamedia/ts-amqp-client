@@ -4,6 +4,7 @@ import { clearTimeout, setTimeout } from 'timers';
 import { URL } from 'url';
 import {
   Consumer,
+  ConsumerEventKind,
   TConsumerCallback,
   TConsumerEventMap,
   TConsumerOptions,
@@ -50,7 +51,10 @@ export type TClientOptions = {
 export class Client extends TypedEventEmitter<TClientEventMap> {
   #connection: Promise<Connection> | null = null;
   #channel: Promise<ConfirmChannel> | null = null;
-  #rpcMap = new Map<TCorrelationId, (result: any) => void>();
+  #rpcMap = new Map<
+    TCorrelationId,
+    { resolve: (result: any) => void; reject: (error: Error) => void }
+  >();
   #rpcConsumer: Consumer;
 
   public readonly url: string;
@@ -77,7 +81,15 @@ export class Client extends TypedEventEmitter<TClientEventMap> {
       options?.rpcResultsQueueName ||
         `rpc_results.${crypto.randomBytes(4).toString('base64')}`,
       ({ payload, message }) =>
-        this.#rpcMap.get(message.properties.correlationId)?.(payload),
+        this.#rpcMap.get(message.properties.correlationId)?.resolve(payload),
+      {
+        on: {
+          [ConsumerEventKind.Stopped]: () =>
+            this.#rpcMap.forEach(({ reject }) =>
+              reject(new Error(`The RPC consumer stopped`)),
+            ),
+        },
+      },
     );
   }
 
@@ -210,11 +222,14 @@ export class Client extends TypedEventEmitter<TClientEventMap> {
       }, timeoutInMs);
 
       // Handle the result
-      this.#rpcMap.set(correlationId, (result: TResponse) => {
-        clearTimeout(timeoutId);
-        this.#rpcMap.delete(correlationId);
+      this.#rpcMap.set(correlationId, {
+        resolve: (result: TResponse) => {
+          clearTimeout(timeoutId);
+          this.#rpcMap.delete(correlationId);
 
-        resolve(result);
+          resolve(result);
+        },
+        reject,
       });
 
       try {
