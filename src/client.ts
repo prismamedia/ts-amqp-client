@@ -9,7 +9,11 @@ import {
   TConsumerEventMap,
   TConsumerOptions,
 } from './consumer';
-import { TEventName, TypedEventEmitter } from './typed-event-emitter';
+import {
+  TEventListenerOptions,
+  TEventName,
+  TypedEventEmitter,
+} from './typed-event-emitter';
 
 export type TMessagePayload = { [key: string]: any };
 
@@ -46,6 +50,11 @@ export type TRPCOptions = Omit<TPublishOptions, 'expiration'> & {
 
 export type TClientOptions = {
   rpcResultsQueueName?: TQueueName;
+
+  /**
+   * Add some event listeners
+   */
+  on?: TEventListenerOptions<TClientEventMap>;
 };
 
 export class Client extends TypedEventEmitter<TClientEventMap> {
@@ -66,7 +75,7 @@ export class Client extends TypedEventEmitter<TClientEventMap> {
     url: string,
     public readonly options?: TClientOptions,
   ) {
-    super();
+    super(options?.on);
 
     const providedUrl = new URL(url);
 
