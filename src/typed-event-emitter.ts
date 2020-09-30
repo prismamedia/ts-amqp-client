@@ -1,12 +1,15 @@
-import { EventEmitter } from 'events';
+import { errorMonitor, EventEmitter } from 'events';
 
 export type TEventMap = Record<string, any>;
 
-type TInternalEventMap<TMap extends TEventMap> = { error: Error } & TMap;
+type TInternalEventMap<TMap extends TEventMap> = {
+  error: Error;
+  [errorMonitor]: Error;
+} & TMap;
 
 export type TEventName<TMap extends TEventMap> = Extract<
   keyof TInternalEventMap<TMap>,
-  string
+  string | Symbol
 >;
 
 export type TEventData<

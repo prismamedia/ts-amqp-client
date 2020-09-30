@@ -145,13 +145,11 @@ export class Consumer<
       this.#tag = null;
       this.clearConsumeTimeout();
       this.clearIdleTimeout();
-    })
-      .on(ConsumerEventKind.ChannelClosed, () => {
-        if (this.isConsuming()) {
-          this.emit(ConsumerEventKind.Stopped);
-        }
-      })
-      .on('error', (error) => client.emit('error', error));
+    }).on(ConsumerEventKind.ChannelClosed, () => {
+      if (this.isConsuming()) {
+        this.emit(ConsumerEventKind.Stopped);
+      }
+    });
   }
 
   public getStatus(): ConsumerStatus {
@@ -304,82 +302,87 @@ export class Consumer<
         } else {
           this.setIdleTimeout();
 
-          if (message.properties.contentType !== 'application/json') {
-            // The message's "Content-Type" is not supported, reject it
-            return this.reject(channel, {
-              message,
-              error: new Error(
-                `The Content-Type "${String(
-                  message.properties.contentType,
-                )}" is not supported, the message has been rejected`,
-              ),
-            });
-          }
-
-          let payload: TPayload;
-
           try {
-            payload = JSON.parse(message.content.toString());
-          } catch (error) {
-            // The message is not valid JSON, reject it
-            return this.reject(channel, {
-              message,
-              error,
-            });
-          }
-
-          let requeueOnError: boolean = false;
-
-          try {
-            const result = await this.callback({
-              message,
-              payload,
-              requeueOnError: message.fields.redelivered
-                ? undefined
-                : () => (requeueOnError = true),
-            });
-
-            if (
-              message.properties.replyTo &&
-              message.properties.correlationId &&
-              typeof result !== 'undefined'
-            ) {
-              await this.client.publish(
-                '',
-                message.properties.replyTo,
-                result,
-                { correlationId: message.properties.correlationId },
-              );
-            }
-          } catch (error) {
-            this.emit(ConsumerEventKind.MessageCallbackError, {
-              message,
-              payload,
-              error,
-            });
-
-            if (this.stopOnMessageCallbackError) {
-              await this.stop();
+            if (message.properties.contentType !== 'application/json') {
+              // The message's "Content-Type" is not supported, reject it
+              return this.reject(channel, {
+                message,
+                error: new Error(
+                  `The Content-Type "${String(
+                    message.properties.contentType,
+                  )}" is not supported, the message has been rejected`,
+                ),
+              });
             }
 
-            // The callback has failed, requeue or reject the message
-            return requeueOnError
-              ? this.requeue(channel, {
-                  message,
-                  payload,
-                  error,
-                })
-              : this.reject(channel, {
-                  message,
-                  payload,
-                  error,
-                });
-          }
+            let payload: TPayload;
 
-          return this.ack(channel, {
-            message,
-            payload,
-          });
+            try {
+              payload = JSON.parse(message.content.toString());
+            } catch (error) {
+              // The message is not valid JSON, reject it
+              return this.reject(channel, {
+                message,
+                error,
+              });
+            }
+
+            let requeueOnError: boolean = false;
+
+            try {
+              const result = await this.callback({
+                message,
+                payload,
+                requeueOnError: message.fields.redelivered
+                  ? undefined
+                  : () => (requeueOnError = true),
+              });
+
+              if (
+                message.properties.replyTo &&
+                message.properties.correlationId &&
+                typeof result !== 'undefined'
+              ) {
+                await this.client.publish(
+                  '',
+                  message.properties.replyTo,
+                  result,
+                  { correlationId: message.properties.correlationId },
+                );
+              }
+            } catch (error) {
+              this.emit(ConsumerEventKind.MessageCallbackError, {
+                message,
+                payload,
+                error,
+              });
+
+              if (this.stopOnMessageCallbackError) {
+                await this.stop();
+              }
+
+              // The callback has failed, requeue or reject the message
+              return requeueOnError
+                ? this.requeue(channel, {
+                    message,
+                    payload,
+                    error,
+                  })
+                : this.reject(channel, {
+                    message,
+                    payload,
+                    error,
+                  });
+            }
+
+            return this.ack(channel, {
+              message,
+              payload,
+            });
+          } catch (error) {
+            // Despite our best efforts, an error has not been caught "properly"
+            this.emit('error', error);
+          }
         }
       },
       this.options,

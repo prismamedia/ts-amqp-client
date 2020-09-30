@@ -45,7 +45,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["amqplib", "npm:0.6.0"],
             ["jest", "npm:26.4.2"],
             ["prettier", "npm:2.1.2"],
-            ["ts-jest", "virtual:f18581812bb4c99b6498cb9bb0034243a7627f5de2f4ccba533d03859415f71598c8ae8eefca43f88c1cfe465fb4279a4defc9958ed8d846f991c0a7394581b3#npm:26.4.0"],
+            ["ts-jest", "virtual:f18581812bb4c99b6498cb9bb0034243a7627f5de2f4ccba533d03859415f71598c8ae8eefca43f88c1cfe465fb4279a4defc9958ed8d846f991c0a7394581b3#npm:26.4.1"],
             ["typescript", "patch:typescript@npm%3A4.0.3#builtin<compat/typescript>::version=4.0.3&hash=5b02a2"]
           ],
           "linkType": "SOFT",
@@ -780,7 +780,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["amqplib", "npm:0.6.0"],
             ["jest", "npm:26.4.2"],
             ["prettier", "npm:2.1.2"],
-            ["ts-jest", "virtual:f18581812bb4c99b6498cb9bb0034243a7627f5de2f4ccba533d03859415f71598c8ae8eefca43f88c1cfe465fb4279a4defc9958ed8d846f991c0a7394581b3#npm:26.4.0"],
+            ["ts-jest", "virtual:f18581812bb4c99b6498cb9bb0034243a7627f5de2f4ccba533d03859415f71598c8ae8eefca43f88c1cfe465fb4279a4defc9958ed8d846f991c0a7394581b3#npm:26.4.1"],
             ["typescript", "patch:typescript@npm%3A4.0.3#builtin<compat/typescript>::version=4.0.3&hash=5b02a2"]
           ],
           "linkType": "SOFT",
@@ -6473,10 +6473,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]
       ]],
       ["ts-jest", [
-        ["virtual:f18581812bb4c99b6498cb9bb0034243a7627f5de2f4ccba533d03859415f71598c8ae8eefca43f88c1cfe465fb4279a4defc9958ed8d846f991c0a7394581b3#npm:26.4.0", {
-          "packageLocation": "./.yarn/$$virtual/ts-jest-virtual-fb85e44e39/0/cache/ts-jest-npm-26.4.0-46cb04e6d8-1c3d1aad6d.zip/node_modules/ts-jest/",
+        ["virtual:f18581812bb4c99b6498cb9bb0034243a7627f5de2f4ccba533d03859415f71598c8ae8eefca43f88c1cfe465fb4279a4defc9958ed8d846f991c0a7394581b3#npm:26.4.1", {
+          "packageLocation": "./.yarn/$$virtual/ts-jest-virtual-a8b808797d/0/cache/ts-jest-npm-26.4.1-57675b03fb-d57275098b.zip/node_modules/ts-jest/",
           "packageDependencies": [
-            ["ts-jest", "virtual:f18581812bb4c99b6498cb9bb0034243a7627f5de2f4ccba533d03859415f71598c8ae8eefca43f88c1cfe465fb4279a4defc9958ed8d846f991c0a7394581b3#npm:26.4.0"],
+            ["ts-jest", "virtual:f18581812bb4c99b6498cb9bb0034243a7627f5de2f4ccba533d03859415f71598c8ae8eefca43f88c1cfe465fb4279a4defc9958ed8d846f991c0a7394581b3#npm:26.4.1"],
             ["@types/jest", "npm:26.0.14"],
             ["@types/typescript", null],
             ["bs-logger", "npm:0.2.6"],
