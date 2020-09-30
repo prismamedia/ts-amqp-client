@@ -1,7 +1,11 @@
 import type { ConfirmChannel, Message, Options } from 'amqplib';
 import { clearTimeout, setTimeout } from 'timers';
 import type { Client, TMessagePayload, TQueueName } from './client';
-import { TEventName, TypedEventEmitter } from './typed-event-emitter';
+import {
+  TEventListenerOptions,
+  TEventName,
+  TypedEventEmitter,
+} from './typed-event-emitter';
 
 export type TConsumerTag = string;
 
@@ -102,6 +106,11 @@ export type TConsumerOptions = Omit<Options.Consume, 'noLocal'> & {
    * Default is false, the message is rejected and the consumer continues
    */
   stopOnMessageCallbackError?: boolean;
+
+  /**
+   * Add some event listeners
+   */
+  on?: TEventListenerOptions<TConsumerEventMap>;
 };
 
 export class Consumer<
@@ -129,10 +138,11 @@ export class Consumer<
       consumeInMs,
       idleInMs,
       stopOnMessageCallbackError = false,
+      on,
       ...options
     }: TConsumerOptions = {},
   ) {
-    super();
+    super(on);
 
     this.prefetch = prefetch;
     this.consumeInMs = consumeInMs ?? null;

@@ -22,7 +22,23 @@ export type TEventListener<
   TName extends TEventName<TMap> = TEventName<TMap>
 > = (data: TEventData<TMap, TName>) => void;
 
+export type TEventListenerOptions<TMap extends TEventMap> = Partial<
+  { [TName in TEventName<TMap>]: TEventListener<TMap, TName> }
+>;
+
 export class TypedEventEmitter<TMap extends TEventMap> extends EventEmitter {
+  public constructor(options?: TEventListenerOptions<TMap>) {
+    super();
+
+    if (options) {
+      for (const [name, listener] of Object.entries(options)) {
+        if (listener) {
+          this.on<any>(name, listener);
+        }
+      }
+    }
+  }
+
   public emit<TName extends TEventName<TMap>>(
     ...[name, data]: TEventData<TMap, TName> extends undefined
       ? [name: TName]
@@ -59,9 +75,9 @@ export class TypedEventEmitter<TMap extends TEventMap> extends EventEmitter {
       ] => [
         name,
         (data) => {
-          resolve(data);
-
           listeners.forEach((args) => this.removeListener(...args));
+
+          resolve(data);
         },
       ]);
 
