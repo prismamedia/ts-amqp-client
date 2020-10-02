@@ -1,5 +1,6 @@
 import { ConfirmChannel, connect, Connection, Options } from 'amqplib';
 import crypto from 'crypto';
+import { errorMonitor } from 'events';
 import { clearTimeout, setTimeout } from 'timers';
 import { URL } from 'url';
 import {
@@ -93,6 +94,8 @@ export class Client extends TypedEventEmitter<TClientEventMap> {
         this.#rpcMap.get(message.properties.correlationId)?.resolve(payload),
       {
         on: {
+          [errorMonitor]: (error) =>
+            this.#rpcMap.forEach(({ reject }) => reject(error)),
           [ConsumerEventKind.Stopped]: () =>
             this.#rpcMap.forEach(({ reject }) =>
               reject(new Error(`The RPC consumer stopped`)),

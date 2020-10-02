@@ -7,6 +7,10 @@ import {
   TypedEventEmitter,
 } from './typed-event-emitter';
 
+function computeSpentTimeInMs(since: bigint): number {
+  return Math.round(Number(process.hrtime.bigint() - since) / 1000000);
+}
+
 export type TConsumerTag = string;
 
 export type TConsumerCallbackArgs<TPayload extends TMessagePayload> = {
@@ -63,25 +67,30 @@ export type TConsumerEventMap = {
   [ConsumerEventKind.MessageParsed]: {
     message: Message;
     payload: TMessagePayload;
+    tookInMs: number;
   };
   [ConsumerEventKind.MessageRejected]: {
     message: Message;
     payload?: TMessagePayload;
     error: Error;
+    tookInMs: number;
   };
   [ConsumerEventKind.MessageRequeued]: {
     message: Message;
     payload: TMessagePayload;
     error: Error;
+    tookInMs: number;
   };
   [ConsumerEventKind.MessageAcknowledged]: {
     message: Message;
     payload: TMessagePayload;
+    tookInMs: number;
   };
   [ConsumerEventKind.MessageCallbackError]: {
     message: Message;
     payload: TMessagePayload;
     error: Error;
+    tookInMs: number;
   };
 };
 
@@ -255,7 +264,10 @@ export class Consumer<
   }
 
   protected clearConsumeTimeout(): void {
-    this.#consumeTimeoutId && clearTimeout(this.#consumeTimeoutId);
+    if (this.#consumeTimeoutId) {
+      clearTimeout(this.#consumeTimeoutId);
+      this.#consumeTimeoutId = null;
+    }
   }
 
   protected setConsumeTimeout(): void {
@@ -274,7 +286,10 @@ export class Consumer<
   }
 
   protected clearIdleTimeout(): void {
-    this.#idleTimeoutId && clearTimeout(this.#idleTimeoutId);
+    if (this.#idleTimeoutId) {
+      clearTimeout(this.#idleTimeoutId);
+      this.#idleTimeoutId = null;
+    }
   }
 
   protected setIdleTimeout(): void {
@@ -310,6 +325,8 @@ export class Consumer<
         if (message === null) {
           this.emit(ConsumerEventKind.Stopped);
         } else {
+          const start = process.hrtime.bigint();
+
           this.setIdleTimeout();
 
           try {
@@ -322,6 +339,7 @@ export class Consumer<
                     message.properties.contentType,
                   )}" is not supported, the message has been rejected`,
                 ),
+                tookInMs: computeSpentTimeInMs(start),
               });
             }
 
@@ -334,8 +352,15 @@ export class Consumer<
               return this.reject(channel, {
                 message,
                 error,
+                tookInMs: computeSpentTimeInMs(start),
               });
             }
+
+            this.emit(ConsumerEventKind.MessageParsed, {
+              message,
+              payload,
+              tookInMs: computeSpentTimeInMs(start),
+            });
 
             let requeueOnError: boolean = false;
 
@@ -365,6 +390,7 @@ export class Consumer<
                 message,
                 payload,
                 error,
+                tookInMs: computeSpentTimeInMs(start),
               });
 
               if (this.stopOnMessageCallbackError) {
@@ -377,17 +403,20 @@ export class Consumer<
                     message,
                     payload,
                     error,
+                    tookInMs: computeSpentTimeInMs(start),
                   })
                 : this.reject(channel, {
                     message,
                     payload,
                     error,
+                    tookInMs: computeSpentTimeInMs(start),
                   });
             }
 
             return this.ack(channel, {
               message,
               payload,
+              tookInMs: computeSpentTimeInMs(start),
             });
           } catch (error) {
             // Despite our best efforts, an error has not been caught "properly"
