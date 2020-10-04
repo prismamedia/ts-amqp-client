@@ -16,8 +16,6 @@ import {
   TypedEventEmitter,
 } from './typed-event-emitter';
 
-export type TMessagePayload = { [key: string]: any };
-
 export type TQueueName = string;
 
 export type TCorrelationId = string;
@@ -89,8 +87,8 @@ export class Client extends TypedEventEmitter<TClientEventMap> {
     this.#rpcConsumer = new Consumer(
       this,
       options?.rpcResultsQueueName ||
-        `rpc_results.${crypto.randomBytes(4).toString('base64')}`,
-      ({ payload, message }) =>
+        `rpc_results.${crypto.randomBytes(4).toString('hex')}`,
+      async ({ payload, message }) =>
         this.#rpcMap.get(message.properties.correlationId)?.resolve(payload),
       {
         on: {
@@ -158,12 +156,17 @@ export class Client extends TypedEventEmitter<TClientEventMap> {
     await (await this.#connection)?.close();
   }
 
-  public async publish<TPayload extends TMessagePayload = any>(
+  public async publish<TPayload = any>(
     exchange: string = '',
     routingKey: string = '',
     payload: TPayload,
     options?: TPublishOptions,
   ): Promise<void> {
+    // Forbid usage of undefined and null values as they are not "safe" to be stringified and parsed
+    if (payload == null) {
+      throw new TypeError('The payload has to be a non-null value.');
+    }
+
     const channel = await this.getChannel();
 
     await new Promise((resolve, reject) =>
@@ -177,13 +180,10 @@ export class Client extends TypedEventEmitter<TClientEventMap> {
     );
   }
 
-  public async consume<
-    TPayload extends TMessagePayload = any,
-    TReply extends TMessagePayload = any
-  >(
+  public async consume<TPayload = any, TReply = any>(
     queueName: TQueueName,
     callback: TConsumerCallback<TPayload, TReply>,
-    options?: TConsumerOptions,
+    options?: TConsumerOptions<TPayload, TReply>,
   ): Promise<Consumer<TPayload, TReply>> {
     const consumer = new Consumer(this, queueName, callback, options);
     await consumer.start();
@@ -191,24 +191,18 @@ export class Client extends TypedEventEmitter<TClientEventMap> {
     return consumer;
   }
 
-  public async consumeAndWait<
-    TPayload extends TMessagePayload = any,
-    TReply extends TMessagePayload = any
-  >(
+  public async consumeAndWait<TPayload = any, TReply = any>(
     queueName: TQueueName,
     callback: TConsumerCallback<TPayload, TReply>,
-    options: TConsumerOptions,
-    ...eventNames: TEventName<TConsumerEventMap>[]
+    options: TConsumerOptions<TPayload, TReply>,
+    ...eventNames: TEventName<TConsumerEventMap<TPayload, TReply>>[]
   ) {
     const consumer = await this.consume(queueName, callback, options);
 
     return consumer.wait(...eventNames);
   }
 
-  public async rpc<
-    TRequest extends TMessagePayload = any,
-    TResponse extends TMessagePayload = any
-  >(
+  public async rpc<TRequest = any, TResponse = any>(
     exchange: string = '',
     routingKey: string = '',
     request: TRequest,
@@ -219,7 +213,7 @@ export class Client extends TypedEventEmitter<TClientEventMap> {
       await this.#rpcConsumer.start();
     }
 
-    const correlationId = crypto.randomBytes(4).toString('base64');
+    const correlationId = crypto.randomBytes(4).toString('hex');
 
     return new Promise(async (resolve, reject) => {
       // Handle the timeout

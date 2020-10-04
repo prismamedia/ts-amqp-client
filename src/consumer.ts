@@ -1,6 +1,7 @@
 import type { ConfirmChannel, Message, Options } from 'amqplib';
+import { errorMonitor } from 'events';
 import { clearTimeout, setTimeout } from 'timers';
-import type { Client, TMessagePayload, TQueueName } from './client';
+import type { Client, TQueueName } from './client';
 import {
   TEventListenerOptions,
   TEventName,
@@ -13,7 +14,7 @@ function computeSpentTimeInMs(since: bigint): number {
 
 export type TConsumerTag = string;
 
-export type TConsumerCallbackArgs<TPayload extends TMessagePayload> = {
+export type TConsumerCallbackArgs<TPayload> = {
   /**
    * The payload
    */
@@ -23,22 +24,11 @@ export type TConsumerCallbackArgs<TPayload extends TMessagePayload> = {
    * The whole message
    */
   message: Message;
-
-  /**
-   * Requeue the current message in case an Error is thrown in the callback,
-   * the default behavior is to reject it.
-   *
-   * The method is available only if the message has not been already redelivered
-   */
-  requeueOnError?: () => void;
 };
 
-export type TConsumerCallback<
-  TPayload extends TMessagePayload,
-  TReply extends TMessagePayload
-> = (
+export type TConsumerCallback<TPayload, TReply> = (
   args: TConsumerCallbackArgs<TPayload>,
-) => Promise<TReply | void> | (TReply | void);
+) => Promise<TReply>;
 
 export enum ConsumerStatus {
   Idle = 'IDLE',
@@ -58,7 +48,7 @@ export enum ConsumerEventKind {
   MessageCallbackError = 'MESSAGE_CALLBACK_ERROR',
 }
 
-export type TConsumerEventMap = {
+export type TConsumerEventMap<TPayload, TReply> = {
   [ConsumerEventKind.Stopped]: undefined;
   [ConsumerEventKind.Started]: undefined;
   [ConsumerEventKind.ChannelError]: Error;
@@ -66,35 +56,39 @@ export type TConsumerEventMap = {
   [ConsumerEventKind.ChannelOpened]: ConfirmChannel;
   [ConsumerEventKind.MessageParsed]: {
     message: Message;
-    payload: TMessagePayload;
+    payload: TPayload;
     tookInMs: number;
   };
   [ConsumerEventKind.MessageRejected]: {
     message: Message;
-    payload?: TMessagePayload;
+    payload?: TPayload;
     error: Error;
     tookInMs: number;
   };
   [ConsumerEventKind.MessageRequeued]: {
     message: Message;
-    payload: TMessagePayload;
+    payload: TPayload;
     error: Error;
     tookInMs: number;
   };
   [ConsumerEventKind.MessageAcknowledged]: {
     message: Message;
-    payload: TMessagePayload;
+    payload: TPayload;
+    reply: TReply;
     tookInMs: number;
   };
   [ConsumerEventKind.MessageCallbackError]: {
     message: Message;
-    payload: TMessagePayload;
+    payload: TPayload;
     error: Error;
     tookInMs: number;
   };
 };
 
-export type TConsumerOptions = Omit<Options.Consume, 'noLocal'> & {
+export type TConsumerOptions<TPayload, TReply> = Omit<
+  Options.Consume,
+  'noLocal'
+> & {
   /**
    * @see https://www.rabbitmq.com/consumer-prefetch.html
    */
@@ -111,21 +105,26 @@ export type TConsumerOptions = Omit<Options.Consume, 'noLocal'> & {
   idleInMs?: number;
 
   /**
-   * Stop on message's callback error"
-   * Default is false, the message is rejected and the consumer continues
+   * In case of uncaught "callback error", either requeue (true) or reject (false) the message
+   * Default: false
    */
-  stopOnMessageCallbackError?: boolean;
+  requeueOnError?: boolean;
+
+  /**
+   * In case of uncaught "callback error", either stop (true) or continues (false) the consumer
+   * Default: false
+   */
+  stopOnError?: boolean;
 
   /**
    * Add some event listeners
    */
-  on?: TEventListenerOptions<TConsumerEventMap>;
+  on?: TEventListenerOptions<TConsumerEventMap<TPayload, TReply>>;
 };
 
-export class Consumer<
-  TPayload extends TMessagePayload = any,
-  TReply extends TMessagePayload = any
-> extends TypedEventEmitter<TConsumerEventMap> {
+export class Consumer<TPayload = any, TReply = any> extends TypedEventEmitter<
+  TConsumerEventMap<TPayload, TReply>
+> {
   #status: ConsumerStatus = ConsumerStatus.Idle;
   #tag: TConsumerTag | null = null;
   #channel: Promise<ConfirmChannel> | null = null;
@@ -135,7 +134,8 @@ export class Consumer<
   public readonly prefetch: number;
   public readonly consumeInMs: number | null;
   public readonly idleInMs: number | null;
-  public readonly stopOnMessageCallbackError: boolean;
+  public readonly requeueOnError: boolean;
+  public readonly stopOnError: boolean;
   public readonly options: Options.Consume;
 
   public constructor(
@@ -146,17 +146,19 @@ export class Consumer<
       prefetch = 1,
       consumeInMs,
       idleInMs,
-      stopOnMessageCallbackError = false,
+      requeueOnError = false,
+      stopOnError = false,
       on,
       ...options
-    }: TConsumerOptions = {},
+    }: TConsumerOptions<TPayload, TReply> = {},
   ) {
     super(on);
 
     this.prefetch = prefetch;
     this.consumeInMs = consumeInMs ?? null;
     this.idleInMs = idleInMs ?? null;
-    this.stopOnMessageCallbackError = stopOnMessageCallbackError;
+    this.requeueOnError = requeueOnError;
+    this.stopOnError = stopOnError;
     this.options = options;
 
     this.on(ConsumerEventKind.Stopped, () => {
@@ -164,11 +166,17 @@ export class Consumer<
       this.#tag = null;
       this.clearConsumeTimeout();
       this.clearIdleTimeout();
-    }).on(ConsumerEventKind.ChannelClosed, () => {
-      if (this.isConsuming()) {
-        this.emit(ConsumerEventKind.Stopped);
-      }
-    });
+    })
+      .on(errorMonitor, () => {
+        if (this.isConsuming()) {
+          this.emit(ConsumerEventKind.Stopped);
+        }
+      })
+      .on(ConsumerEventKind.ChannelClosed, () => {
+        if (this.isConsuming()) {
+          this.emit(ConsumerEventKind.Stopped);
+        }
+      });
   }
 
   public getStatus(): ConsumerStatus {
@@ -217,7 +225,10 @@ export class Consumer<
 
   protected ack(
     channel: ConfirmChannel,
-    data: TConsumerEventMap[ConsumerEventKind.MessageAcknowledged],
+    data: TConsumerEventMap<
+      TPayload,
+      TReply
+    >[ConsumerEventKind.MessageAcknowledged],
   ): void {
     try {
       channel.ack(data.message);
@@ -233,7 +244,10 @@ export class Consumer<
 
   protected requeue(
     channel: ConfirmChannel,
-    data: TConsumerEventMap[ConsumerEventKind.MessageRequeued],
+    data: TConsumerEventMap<
+      TPayload,
+      TReply
+    >[ConsumerEventKind.MessageRequeued],
   ): void {
     try {
       channel.nack(data.message, false, true);
@@ -249,7 +263,10 @@ export class Consumer<
 
   protected reject(
     channel: ConfirmChannel,
-    data: TConsumerEventMap[ConsumerEventKind.MessageRejected],
+    data: TConsumerEventMap<
+      TPayload,
+      TReply
+    >[ConsumerEventKind.MessageRejected],
   ): void {
     try {
       channel.nack(data.message, false, false);
@@ -362,29 +379,27 @@ export class Consumer<
               tookInMs: computeSpentTimeInMs(start),
             });
 
-            let requeueOnError: boolean = false;
-
             try {
-              const result = await this.callback({
-                message,
-                payload,
-                requeueOnError: message.fields.redelivered
-                  ? undefined
-                  : () => (requeueOnError = true),
-              });
+              const reply = await this.callback({ message, payload });
 
               if (
                 message.properties.replyTo &&
-                message.properties.correlationId &&
-                typeof result !== 'undefined'
+                message.properties.correlationId
               ) {
                 await this.client.publish(
                   '',
                   message.properties.replyTo,
-                  result,
+                  reply,
                   { correlationId: message.properties.correlationId },
                 );
               }
+
+              return this.ack(channel, {
+                message,
+                payload,
+                reply,
+                tookInMs: computeSpentTimeInMs(start),
+              });
             } catch (error) {
               this.emit(ConsumerEventKind.MessageCallbackError, {
                 message,
@@ -393,12 +408,12 @@ export class Consumer<
                 tookInMs: computeSpentTimeInMs(start),
               });
 
-              if (this.stopOnMessageCallbackError) {
+              if (this.stopOnError) {
                 await this.stop();
               }
 
               // The callback has failed, requeue or reject the message
-              return requeueOnError
+              return this.requeueOnError
                 ? this.requeue(channel, {
                     message,
                     payload,
@@ -412,12 +427,6 @@ export class Consumer<
                     tookInMs: computeSpentTimeInMs(start),
                   });
             }
-
-            return this.ack(channel, {
-              message,
-              payload,
-              tookInMs: computeSpentTimeInMs(start),
-            });
           } catch (error) {
             // Despite our best efforts, an error has not been caught "properly"
             this.emit('error', error);
@@ -458,9 +467,9 @@ export class Consumer<
     this.emit(ConsumerEventKind.Stopped);
   }
 
-  public async startAndWait<TName extends TEventName<TConsumerEventMap>>(
-    ...names: TName[]
-  ) {
+  public async startAndWait<
+    TName extends TEventName<TConsumerEventMap<TPayload, TReply>>
+  >(...names: TName[]) {
     await this.start();
 
     return this.wait(...names);
