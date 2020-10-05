@@ -180,22 +180,22 @@ export class Client extends TypedEventEmitter<TClientEventMap> {
     );
   }
 
-  public async consume<TPayload = any, TReply = any>(
+  public async consume<TPayload = any, TResult = any>(
     queueName: TQueueName,
-    callback: TConsumerCallback<TPayload, TReply>,
-    options?: TConsumerOptions<TPayload, TReply>,
-  ): Promise<Consumer<TPayload, TReply>> {
+    callback: TConsumerCallback<TPayload, TResult>,
+    options?: TConsumerOptions<TPayload, TResult>,
+  ): Promise<Consumer<TPayload, TResult>> {
     const consumer = new Consumer(this, queueName, callback, options);
     await consumer.start();
 
     return consumer;
   }
 
-  public async consumeAndWait<TPayload = any, TReply = any>(
+  public async consumeAndWait<TPayload = any, TResult = any>(
     queueName: TQueueName,
-    callback: TConsumerCallback<TPayload, TReply>,
-    options: TConsumerOptions<TPayload, TReply>,
-    ...eventNames: TEventName<TConsumerEventMap<TPayload, TReply>>[]
+    callback: TConsumerCallback<TPayload, TResult>,
+    options: TConsumerOptions<TPayload, TResult>,
+    ...eventNames: TEventName<TConsumerEventMap<TPayload, TResult>>[]
   ) {
     const consumer = await this.consume(queueName, callback, options);
 

@@ -26,9 +26,9 @@ export type TConsumerCallbackArgs<TPayload> = {
   message: Message;
 };
 
-export type TConsumerCallback<TPayload, TReply> = (
+export type TConsumerCallback<TPayload, TResult> = (
   args: TConsumerCallbackArgs<TPayload>,
-) => Promise<TReply>;
+) => Promise<TResult>;
 
 export enum ConsumerStatus {
   Idle = 'IDLE',
@@ -48,7 +48,12 @@ export enum ConsumerEventKind {
   MessageCallbackError = 'MESSAGE_CALLBACK_ERROR',
 }
 
-export type TConsumerEventMap<TPayload, TReply> = {
+export type TConsumerReply = {
+  replyTo: string;
+  correlationId: string;
+};
+
+export type TConsumerEventMap<TPayload, TResult> = {
   [ConsumerEventKind.Stopped]: undefined;
   [ConsumerEventKind.Started]: undefined;
   [ConsumerEventKind.ChannelError]: Error;
@@ -74,7 +79,8 @@ export type TConsumerEventMap<TPayload, TReply> = {
   [ConsumerEventKind.MessageAcknowledged]: {
     message: Message;
     payload: TPayload;
-    reply: TReply;
+    result: TResult;
+    reply?: TConsumerReply;
     tookInMs: number;
   };
   [ConsumerEventKind.MessageCallbackError]: {
@@ -85,7 +91,7 @@ export type TConsumerEventMap<TPayload, TReply> = {
   };
 };
 
-export type TConsumerOptions<TPayload, TReply> = Omit<
+export type TConsumerOptions<TPayload, TResult> = Omit<
   Options.Consume,
   'noLocal'
 > & {
@@ -119,11 +125,11 @@ export type TConsumerOptions<TPayload, TReply> = Omit<
   /**
    * Add some event listeners
    */
-  on?: TEventListenerOptions<TConsumerEventMap<TPayload, TReply>>;
+  on?: TEventListenerOptions<TConsumerEventMap<TPayload, TResult>>;
 };
 
-export class Consumer<TPayload = any, TReply = any> extends TypedEventEmitter<
-  TConsumerEventMap<TPayload, TReply>
+export class Consumer<TPayload = any, TResult = any> extends TypedEventEmitter<
+  TConsumerEventMap<TPayload, TResult>
 > {
   #status: ConsumerStatus = ConsumerStatus.Idle;
   #tag: TConsumerTag | null = null;
@@ -141,7 +147,7 @@ export class Consumer<TPayload = any, TReply = any> extends TypedEventEmitter<
   public constructor(
     public readonly client: Client,
     public readonly queueName: TQueueName,
-    public readonly callback: TConsumerCallback<TPayload, TReply>,
+    public readonly callback: TConsumerCallback<TPayload, TResult>,
     {
       prefetch = 1,
       consumeInMs,
@@ -150,7 +156,7 @@ export class Consumer<TPayload = any, TReply = any> extends TypedEventEmitter<
       stopOnError = false,
       on,
       ...options
-    }: TConsumerOptions<TPayload, TReply> = {},
+    }: TConsumerOptions<TPayload, TResult> = {},
   ) {
     super(on);
 
@@ -227,7 +233,7 @@ export class Consumer<TPayload = any, TReply = any> extends TypedEventEmitter<
     channel: ConfirmChannel,
     data: TConsumerEventMap<
       TPayload,
-      TReply
+      TResult
     >[ConsumerEventKind.MessageAcknowledged],
   ): void {
     try {
@@ -246,7 +252,7 @@ export class Consumer<TPayload = any, TReply = any> extends TypedEventEmitter<
     channel: ConfirmChannel,
     data: TConsumerEventMap<
       TPayload,
-      TReply
+      TResult
     >[ConsumerEventKind.MessageRequeued],
   ): void {
     try {
@@ -265,7 +271,7 @@ export class Consumer<TPayload = any, TReply = any> extends TypedEventEmitter<
     channel: ConfirmChannel,
     data: TConsumerEventMap<
       TPayload,
-      TReply
+      TResult
     >[ConsumerEventKind.MessageRejected],
   ): void {
     try {
@@ -380,8 +386,9 @@ export class Consumer<TPayload = any, TReply = any> extends TypedEventEmitter<
             });
 
             try {
-              const reply = await this.callback({ message, payload });
+              const result = await this.callback({ message, payload });
 
+              let reply: TConsumerReply | undefined;
               if (
                 message.properties.replyTo &&
                 message.properties.correlationId
@@ -389,14 +396,20 @@ export class Consumer<TPayload = any, TReply = any> extends TypedEventEmitter<
                 await this.client.publish(
                   '',
                   message.properties.replyTo,
-                  reply,
+                  result,
                   { correlationId: message.properties.correlationId },
                 );
+
+                reply = {
+                  replyTo: message.properties.replyTo,
+                  correlationId: message.properties.correlationId,
+                };
               }
 
               return this.ack(channel, {
                 message,
                 payload,
+                result,
                 reply,
                 tookInMs: computeSpentTimeInMs(start),
               });
@@ -468,7 +481,7 @@ export class Consumer<TPayload = any, TReply = any> extends TypedEventEmitter<
   }
 
   public async startAndWait<
-    TName extends TEventName<TConsumerEventMap<TPayload, TReply>>
+    TName extends TEventName<TConsumerEventMap<TPayload, TResult>>
   >(...names: TName[]) {
     await this.start();
 
