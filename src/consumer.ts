@@ -1,5 +1,6 @@
 import type { ConfirmChannel, Message, Options } from 'amqplib';
 import { errorMonitor } from 'events';
+import { SignalConstants } from 'os';
 import { clearTimeout, setTimeout } from 'timers';
 import type { Client, TQueueName } from './client';
 import {
@@ -11,6 +12,8 @@ import {
 function computeSpentTimeInMs(since: bigint): number {
   return Math.round(Number(process.hrtime.bigint() - since) / 1000000);
 }
+
+export type TSignal = keyof SignalConstants;
 
 export type TConsumerTag = string;
 
@@ -123,6 +126,15 @@ export type TConsumerOptions<TPayload, TResult> = Omit<
   stopOnError?: boolean;
 
   /**
+   * In case of "signals", consumer can be stopped gracefully:
+   * - true = ['SIGINT', 'SIGTERM', 'SIGQUIT']
+   * - false = []
+   *
+   * Default: false
+   */
+  stopOnSignals?: boolean | TSignal[];
+
+  /**
    * Add some event listeners
    */
   on?: TEventListenerOptions<TConsumerEventMap<TPayload, TResult>>;
@@ -136,12 +148,14 @@ export class Consumer<TPayload = any, TResult = any> extends TypedEventEmitter<
   #channel: Promise<ConfirmChannel> | null = null;
   #consumeTimeoutId: ReturnType<typeof setTimeout> | null = null;
   #idleTimeoutId: ReturnType<typeof setTimeout> | null = null;
+  #signalHandler = (async () => this.stop()).bind(this);
 
   public readonly prefetch: number;
   public readonly consumeInMs: number | null;
   public readonly idleInMs: number | null;
   public readonly requeueOnError: boolean;
   public readonly stopOnError: boolean;
+  public readonly stopOnSignalSet: ReadonlySet<TSignal>;
   public readonly options: Options.Consume;
 
   public constructor(
@@ -154,6 +168,7 @@ export class Consumer<TPayload = any, TResult = any> extends TypedEventEmitter<
       idleInMs,
       requeueOnError = false,
       stopOnError = false,
+      stopOnSignals = false,
       on,
       ...options
     }: TConsumerOptions<TPayload, TResult> = {},
@@ -165,6 +180,13 @@ export class Consumer<TPayload = any, TResult = any> extends TypedEventEmitter<
     this.idleInMs = idleInMs ?? null;
     this.requeueOnError = requeueOnError;
     this.stopOnError = stopOnError;
+    this.stopOnSignalSet = new Set(
+      typeof stopOnSignals === 'boolean'
+        ? stopOnSignals
+          ? ['SIGINT', 'SIGTERM', 'SIGQUIT']
+          : []
+        : stopOnSignals,
+    );
     this.options = options;
 
     this.on(ConsumerEventKind.Stopped, () => {
@@ -172,6 +194,7 @@ export class Consumer<TPayload = any, TResult = any> extends TypedEventEmitter<
       this.#tag = null;
       this.clearConsumeTimeout();
       this.clearIdleTimeout();
+      this.clearSignalHandler();
     })
       .on(errorMonitor, () => {
         if (this.isConsuming()) {
@@ -330,6 +353,20 @@ export class Consumer<TPayload = any, TResult = any> extends TypedEventEmitter<
         : null;
   }
 
+  protected clearSignalHandler(): void {
+    this.stopOnSignalSet.forEach((signal) =>
+      process.removeListener(signal, this.#signalHandler),
+    );
+  }
+
+  protected setSignalHandler(): void {
+    this.clearSignalHandler();
+
+    this.stopOnSignalSet.forEach((signal) =>
+      process.on(signal, this.#signalHandler),
+    );
+  }
+
   public async start(): Promise<void> {
     if (this.isConsuming()) {
       throw new Error(
@@ -453,6 +490,7 @@ export class Consumer<TPayload = any, TResult = any> extends TypedEventEmitter<
     this.#tag = tag;
     this.setConsumeTimeout();
     this.setIdleTimeout();
+    this.setSignalHandler();
 
     this.emit(ConsumerEventKind.Started);
   }

@@ -205,6 +205,37 @@ describe('Client', () => {
     }
   });
 
+  it('stops on signals works', async () => {
+    const queueName = 'test_consuming_works';
+    const queueOptions: Options.AssertQueue = { exclusive: true };
+
+    await client.forceQueue(queueName, queueOptions);
+    await client.purgeQueue(queueName);
+
+    try {
+      const consumer = await client.consume<any, void>(
+        queueName,
+        async () => {},
+        { idleInMs: 60000, stopOnSignals: true },
+      );
+
+      async function waitThenSendSignal(): Promise<void> {
+        await waitFor(100);
+
+        process.emit('SIGINT', 'SIGINT');
+      }
+
+      await expect(
+        Promise.all([
+          consumer.wait(ConsumerEventKind.Stopped),
+          waitThenSendSignal(),
+        ]),
+      ).resolves.toBeTruthy();
+    } finally {
+      await client.deleteQueue(queueName);
+    }
+  });
+
   it('rpc works', async () => {
     const queueName = 'test_rpc_works';
     const queueOptions: Options.AssertQueue = { exclusive: true };
