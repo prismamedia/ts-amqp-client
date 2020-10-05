@@ -126,11 +126,11 @@ export type TConsumerOptions<TPayload, TResult> = Omit<
   stopOnError?: boolean;
 
   /**
-   * In case of "signals", consumer can be stopped gracefully:
+   * We can try to gracefully stop the consumer on "known" signals
    * - true = ['SIGINT', 'SIGTERM', 'SIGQUIT']
    * - false = []
    *
-   * Default: false
+   * Default: false / none
    */
   stopOnSignals?: boolean | TSignal[];
 
