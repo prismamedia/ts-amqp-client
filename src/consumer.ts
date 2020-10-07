@@ -1,13 +1,14 @@
+import {
+  TEventArgs,
+  TEventName,
+  TTypedEventEmitterOptions,
+  TypedEventEmitter,
+} from '@prismamedia/ts-typed-event-emitter';
 import type { ConfirmChannel, Message, Options } from 'amqplib';
 import { errorMonitor } from 'events';
 import { SignalConstants } from 'os';
 import { clearTimeout, setTimeout } from 'timers';
 import type { Client, TQueueName } from './client';
-import {
-  TEventListenerOptions,
-  TEventName,
-  TypedEventEmitter,
-} from './typed-event-emitter';
 
 function computeSpentTimeInMs(since: bigint): number {
   return Math.round(Number(process.hrtime.bigint() - since) / 1000000);
@@ -56,42 +57,52 @@ export type TConsumerReply = {
   correlationId: string;
 };
 
-export type TConsumerEventMap<TPayload, TResult> = {
-  [ConsumerEventKind.Stopped]: undefined;
-  [ConsumerEventKind.Started]: undefined;
-  [ConsumerEventKind.ChannelError]: Error;
-  [ConsumerEventKind.ChannelClosed]: undefined;
-  [ConsumerEventKind.ChannelOpened]: ConfirmChannel;
-  [ConsumerEventKind.MessageParsed]: {
-    message: Message;
-    payload: TPayload;
-    tookInMs: number;
-  };
-  [ConsumerEventKind.MessageRejected]: {
-    message: Message;
-    payload?: TPayload;
-    error: Error;
-    tookInMs: number;
-  };
-  [ConsumerEventKind.MessageRequeued]: {
-    message: Message;
-    payload: TPayload;
-    error: Error;
-    tookInMs: number;
-  };
-  [ConsumerEventKind.MessageAcknowledged]: {
-    message: Message;
-    payload: TPayload;
-    result: TResult;
-    reply?: TConsumerReply;
-    tookInMs: number;
-  };
-  [ConsumerEventKind.MessageCallbackError]: {
-    message: Message;
-    payload: TPayload;
-    error: Error;
-    tookInMs: number;
-  };
+export type TConsumerEvents<TPayload, TResult> = {
+  [ConsumerEventKind.Stopped]: [];
+  [ConsumerEventKind.Started]: [];
+  [ConsumerEventKind.ChannelError]: [Error];
+  [ConsumerEventKind.ChannelClosed]: [];
+  [ConsumerEventKind.ChannelOpened]: [ConfirmChannel];
+  [ConsumerEventKind.MessageParsed]: [
+    {
+      message: Message;
+      payload: TPayload;
+      tookInMs: number;
+    },
+  ];
+  [ConsumerEventKind.MessageRejected]: [
+    {
+      message: Message;
+      payload?: TPayload;
+      error: Error;
+      tookInMs: number;
+    },
+  ];
+  [ConsumerEventKind.MessageRequeued]: [
+    {
+      message: Message;
+      payload: TPayload;
+      error: Error;
+      tookInMs: number;
+    },
+  ];
+  [ConsumerEventKind.MessageAcknowledged]: [
+    {
+      message: Message;
+      payload: TPayload;
+      result: TResult;
+      reply?: TConsumerReply;
+      tookInMs: number;
+    },
+  ];
+  [ConsumerEventKind.MessageCallbackError]: [
+    {
+      message: Message;
+      payload: TPayload;
+      error: Error;
+      tookInMs: number;
+    },
+  ];
 };
 
 export type TConsumerOptions<TPayload, TResult> = Omit<
@@ -137,11 +148,11 @@ export type TConsumerOptions<TPayload, TResult> = Omit<
   /**
    * Add some event listeners
    */
-  on?: TEventListenerOptions<TConsumerEventMap<TPayload, TResult>>;
+  on?: TTypedEventEmitterOptions<TConsumerEvents<TPayload, TResult>>;
 };
 
 export class Consumer<TPayload = any, TResult = any> extends TypedEventEmitter<
-  TConsumerEventMap<TPayload, TResult>
+  TConsumerEvents<TPayload, TResult>
 > {
   #status: ConsumerStatus = ConsumerStatus.Idle;
   #tag: TConsumerTag | null = null;
@@ -254,14 +265,16 @@ export class Consumer<TPayload = any, TResult = any> extends TypedEventEmitter<
 
   protected ack(
     channel: ConfirmChannel,
-    data: TConsumerEventMap<
-      TPayload,
-      TResult
-    >[ConsumerEventKind.MessageAcknowledged],
+    ...args: TEventArgs<
+      TConsumerEvents<TPayload, TResult>,
+      ConsumerEventKind.MessageAcknowledged
+    >
   ): void {
+    const [{ message }] = args;
+
     try {
-      channel.ack(data.message);
-      this.emit(ConsumerEventKind.MessageAcknowledged, data);
+      channel.ack(message);
+      this.emit(ConsumerEventKind.MessageAcknowledged, ...args);
     } catch (error) {
       if (error instanceof Error && error.name === 'IllegalOperationError') {
         this.isConsuming() && this.emit(ConsumerEventKind.Stopped);
@@ -273,14 +286,16 @@ export class Consumer<TPayload = any, TResult = any> extends TypedEventEmitter<
 
   protected requeue(
     channel: ConfirmChannel,
-    data: TConsumerEventMap<
-      TPayload,
-      TResult
-    >[ConsumerEventKind.MessageRequeued],
+    ...args: TEventArgs<
+      TConsumerEvents<TPayload, TResult>,
+      ConsumerEventKind.MessageRequeued
+    >
   ): void {
+    const [{ message }] = args;
+
     try {
-      channel.nack(data.message, false, true);
-      this.emit(ConsumerEventKind.MessageRequeued, data);
+      channel.nack(message, false, true);
+      this.emit(ConsumerEventKind.MessageRequeued, ...args);
     } catch (error) {
       if (error instanceof Error && error.name === 'IllegalOperationError') {
         this.isConsuming() && this.emit(ConsumerEventKind.Stopped);
@@ -292,14 +307,16 @@ export class Consumer<TPayload = any, TResult = any> extends TypedEventEmitter<
 
   protected reject(
     channel: ConfirmChannel,
-    data: TConsumerEventMap<
-      TPayload,
-      TResult
-    >[ConsumerEventKind.MessageRejected],
+    ...args: TEventArgs<
+      TConsumerEvents<TPayload, TResult>,
+      ConsumerEventKind.MessageRejected
+    >
   ): void {
+    const [{ message }] = args;
+
     try {
-      channel.nack(data.message, false, false);
-      this.emit(ConsumerEventKind.MessageRejected, data);
+      channel.nack(message, false, false);
+      this.emit(ConsumerEventKind.MessageRejected, ...args);
     } catch (error) {
       if (error instanceof Error && error.name === 'IllegalOperationError') {
         this.isConsuming() && this.emit(ConsumerEventKind.Stopped);
@@ -519,7 +536,7 @@ export class Consumer<TPayload = any, TResult = any> extends TypedEventEmitter<
   }
 
   public async startAndWait<
-    TName extends TEventName<TConsumerEventMap<TPayload, TResult>>
+    TName extends TEventName<TConsumerEvents<TPayload, TResult>>
   >(...names: TName[]) {
     await this.start();
 

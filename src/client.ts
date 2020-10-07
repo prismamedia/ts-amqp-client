@@ -1,3 +1,8 @@
+import {
+  TEventName,
+  TTypedEventEmitterOptions,
+  TypedEventEmitter,
+} from '@prismamedia/ts-typed-event-emitter';
 import { ConfirmChannel, connect, Connection, Options } from 'amqplib';
 import crypto from 'crypto';
 import { errorMonitor } from 'events';
@@ -7,14 +12,9 @@ import {
   Consumer,
   ConsumerEventKind,
   TConsumerCallback,
-  TConsumerEventMap,
+  TConsumerEvents,
   TConsumerOptions,
 } from './consumer';
-import {
-  TEventListenerOptions,
-  TEventName,
-  TypedEventEmitter,
-} from './typed-event-emitter';
 
 export type TQueueName = string;
 
@@ -29,13 +29,13 @@ export enum ClientEventKind {
   ChannelOpened = 'CHANNEL_OPENED',
 }
 
-export type TClientEventMap = {
-  [ClientEventKind.ConnectionError]: Error;
-  [ClientEventKind.ConnectionClosed]: undefined;
-  [ClientEventKind.ConnectionOpened]: Connection;
-  [ClientEventKind.ChannelError]: Error;
-  [ClientEventKind.ChannelClosed]: undefined;
-  [ClientEventKind.ChannelOpened]: ConfirmChannel;
+export type TClientEvents = {
+  [ClientEventKind.ConnectionError]: [Error];
+  [ClientEventKind.ConnectionClosed]: [];
+  [ClientEventKind.ConnectionOpened]: [Connection];
+  [ClientEventKind.ChannelError]: [Error];
+  [ClientEventKind.ChannelClosed]: [];
+  [ClientEventKind.ChannelOpened]: [ConfirmChannel];
 };
 
 export type TPublishOptions = Omit<
@@ -53,10 +53,10 @@ export type TClientOptions = {
   /**
    * Add some event listeners
    */
-  on?: TEventListenerOptions<TClientEventMap>;
+  on?: TTypedEventEmitterOptions<TClientEvents>;
 };
 
-export class Client extends TypedEventEmitter<TClientEventMap> {
+export class Client extends TypedEventEmitter<TClientEvents> {
   #connection: Promise<Connection> | null = null;
   #channel: Promise<ConfirmChannel> | null = null;
   #rpcMap = new Map<
@@ -195,7 +195,7 @@ export class Client extends TypedEventEmitter<TClientEventMap> {
     queueName: TQueueName,
     callback: TConsumerCallback<TPayload, TResult>,
     options: TConsumerOptions<TPayload, TResult>,
-    ...eventNames: TEventName<TConsumerEventMap<TPayload, TResult>>[]
+    ...eventNames: TEventName<TConsumerEvents<TPayload, TResult>>[]
   ) {
     const consumer = await this.consume(queueName, callback, options);
 
