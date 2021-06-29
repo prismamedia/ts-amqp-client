@@ -57,7 +57,7 @@ export type TClientOptions = {
 };
 
 export class Client extends TypedEventEmitter<TClientEvents> {
-  #connection: Promise<Connection> | null = null;
+  #connection: ReturnType<typeof connect> | null = null;
   #channel: Promise<ConfirmChannel> | null = null;
   #rpcMap = new Map<
     TCorrelationId,
@@ -175,7 +175,7 @@ export class Client extends TypedEventEmitter<TClientEvents> {
         routingKey,
         Buffer.from(JSON.stringify(payload)),
         { ...options, contentType: 'application/json' },
-        (error) => (error ? reject(error) : resolve()),
+        (error) => (error ? reject(error) : resolve(undefined)),
       ),
     );
   }
@@ -268,7 +268,7 @@ export class Client extends TypedEventEmitter<TClientEvents> {
       | 'purgeQueue'
       | 'deleteQueue',
       keyof ConfirmChannel
-    >
+    >,
   >(
     methodName: TMethodName,
     ...args: Parameters<ConfirmChannel[TMethodName]>

@@ -11,7 +11,7 @@ services:
     restart: 'unless-stopped'
 
   lib:
-    image: node:12
+    image: node:14
     working_dir: /workspace
     depends_on:
       - rabbitmq

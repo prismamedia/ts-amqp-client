@@ -2,6 +2,16 @@
 
 ## Changelog
 
+# [6.0.0] (2021-06-29)
+
+### Removed
+
+- Dropped support for Node 12
+
+### Added
+
+- Added support for Node 16
+
 # [4.0.0](https://gitlab.com/prismamediadigital/one/js-amqp-client/compare/3.0.6...4.0.0) (2019-03-27)
 
 ### Breaking changes

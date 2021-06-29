@@ -536,7 +536,7 @@ export class Consumer<TPayload = any, TResult = any> extends TypedEventEmitter<
   }
 
   public async startAndWait<
-    TName extends TEventName<TConsumerEvents<TPayload, TResult>>
+    TName extends TEventName<TConsumerEvents<TPayload, TResult>>,
   >(...names: TName[]) {
     await this.start();
 
