@@ -317,7 +317,11 @@ export class Client extends TypedEventEmitter<TClientEvents> {
       return await this.assertExchange(...args);
     } catch (error) {
       // https://www.rabbitmq.com/amqp-0-9-1-reference.html#constants
-      if (typeof error === 'object' && [405, 406].includes(error.code)) {
+      if (
+        typeof error === 'object' &&
+        error != null &&
+        [405, 406].includes((error as any).code)
+      ) {
         await this.deleteExchange(args[0]);
 
         return await this.assertExchange(...args);
@@ -356,7 +360,11 @@ export class Client extends TypedEventEmitter<TClientEvents> {
       return await this.assertQueue(...args);
     } catch (error) {
       // https://www.rabbitmq.com/amqp-0-9-1-reference.html#constants
-      if (typeof error === 'object' && [405, 406].includes(error.code)) {
+      if (
+        typeof error === 'object' &&
+        error != null &&
+        [405, 406].includes((error as any).code)
+      ) {
         await this.deleteQueue(args[0]);
 
         return await this.assertQueue(...args);

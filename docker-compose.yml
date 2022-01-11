@@ -12,6 +12,7 @@ services:
 
   lib:
     image: node:14
+    command: sleep infinity
     working_dir: /workspace
     depends_on:
       - rabbitmq

@@ -424,7 +424,7 @@ export class Consumer<TPayload = any, TResult = any> extends TypedEventEmitter<
 
             try {
               payload = JSON.parse(message.content.toString());
-            } catch (error) {
+            } catch (error: any) {
               // The message is not valid JSON, reject it
               return this.reject(channel, {
                 message,
@@ -467,7 +467,7 @@ export class Consumer<TPayload = any, TResult = any> extends TypedEventEmitter<
                 reply,
                 tookInMs: computeSpentTimeInMs(start),
               });
-            } catch (error) {
+            } catch (error: any) {
               this.emit(ConsumerEventKind.MessageCallbackError, {
                 message,
                 payload,
@@ -494,7 +494,7 @@ export class Consumer<TPayload = any, TResult = any> extends TypedEventEmitter<
                     tookInMs: computeSpentTimeInMs(start),
                   });
             }
-          } catch (error) {
+          } catch (error: any) {
             // Despite our best efforts, an error has not been caught "properly"
             this.emit('error', error);
           }

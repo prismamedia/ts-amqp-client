@@ -8,7 +8,7 @@ This module aims to ease the communication with a broker using the AMQP protocol
 
 ## Prerequisites
 
-This module requires Node 8.9 (the latest LTS) and a connection to an AMQP broker
+This module requires Node 14 and a connection to an AMQP broker
 
 ## Installation
 
@@ -37,11 +37,14 @@ try {
 
 ```javascript
 try {
-  const consumerId = await client.consume('queue_name', (message, payload, ack) => {
-    // Do what you want with the full AMQP message or with the Object payload
+  const consumerId = await client.consume(
+    'queue_name',
+    (message, payload, ack) => {
+      // Do what you want with the full AMQP message or with the Object payload
 
-    ack();
-  });
+      ack();
+    },
+  );
 
   // [...]
 
